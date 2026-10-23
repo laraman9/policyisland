@@ -96,8 +96,8 @@ button{font-family:var(--font)}
 .thumbwrap .side{font-size:12px;color:var(--muted);line-height:1.6}
 .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0 4px}
 .tile{background:#fff;border-radius:14px;padding:10px 8px 9px;box-shadow:0 2px 8px #4a2a1410;min-width:0}
-.tile .bignum{font-size:22px;line-height:1;color:var(--coral);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tile .bignum small{font-size:12px;font-style:normal;font-family:var(--font);color:var(--ink);margin-left:2px;font-weight:700}
+.tile .bignum{font-size:22px;line-height:1.05;color:var(--coral);white-space:nowrap;letter-spacing:-.3px}
+.tile .bignum small{display:block;font-size:11px;font-style:normal;font-family:var(--font);color:var(--ink);margin-top:3px;font-weight:700;letter-spacing:0;white-space:normal;line-height:1.2}
 .tile .tl{font-size:10.5px;color:var(--muted);margin-top:6px;line-height:1.4}
 .facts{margin:8px 0 0;padding-left:18px;font-size:13px;line-height:1.7}
 .timeline{display:flex;align-items:flex-start;margin-top:6px;position:relative}
@@ -337,7 +337,7 @@ details.topic ol{list-style:none;margin:0;padding:2px 6px 8px}
     <div class="eyebrow">HOW TO PLAY</div>
     <h2 id="helpTitle" data-en="Three steps to explore">三步驟逛學生教育政策島</h2>
     <ol class="steps">
-      <li><b>1</b><div><strong data-en="Drag to orbit, scroll to zoom">拖曳旋轉、滾輪縮放</strong><span data-en="Arrow keys also orbit the camera. Esc closes the card.">方向鍵也能轉動鏡頭，Esc 關閉卡片。</span></div></li>
+      <li><b>1</b><div><strong data-en="Drag to orbit, right-drag to pan, scroll to zoom">拖曳旋轉、右鍵拖曳平移、滾輪縮放</strong><span data-en="Shift + drag also pans; panning stays within the campus. Arrow keys orbit, Esc closes the card.">Shift＋拖曳也能平移，範圍限制在校園附近；方向鍵轉動鏡頭，Esc 關閉卡片。</span></div></li>
       <li><b>2</b><div><strong data-en="Tap an island, or pick a student group">點小島，或在「學生族群」選一群學生</strong><span data-en="See which policies help them, with key numbers and timelines.">看哪些政策幫到他們、關鍵數字與時程。</span></div></li>
       <li><b>3</b><div><strong data-en="Turn on “Flows”">打開「協作線」</strong><span data-en="Watch students carry things between islands.">看學生在島與島之間搬運、交接。</span></div></li>
     </ol>
@@ -1091,7 +1091,9 @@ function initRenderer() {
   scene.fog = new THREE.Fog(0xf4eee3, 42, 150);
   camera = new THREE.PerspectiveCamera(32, stage.clientWidth / stage.clientHeight, .3, 320);
   controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true; controls.dampingFactor = .07; controls.enablePan = false;
+  controls.enableDamping = true; controls.dampingFactor = .07;
+  // 平移：右鍵拖曳（或 Shift＋左鍵、雙指拖曳），沿地面移動；範圍由 clampPan() 限制
+  controls.enablePan = true; controls.screenSpacePanning = false; controls.panSpeed = .9;
   controls.minPolarAngle = THREE.MathUtils.degToRad(25); controls.maxPolarAngle = THREE.MathUtils.degToRad(70);
   controls.minDistance = 3; controls.maxDistance = 70;
   controls.addEventListener('change', () => { S.dirty = true; });
@@ -1103,7 +1105,20 @@ function initRenderer() {
   const xs = TILES.map(t => t.pos.x); MAP_FIT = clamp((Math.max(...xs) - Math.min(...xs) + 2 * R) / 18, 1, 1.45);
   noise = new SimplexNoise({ random: mulberry32(1931) });
 }
+// 平移範圍：所有島的外框再往外留一點邊，鏡頭目標超出就推回來（相機跟著平移，保持視角）
+const PAN = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+function setPanBounds() {
+  const xs = TILES.map(t => t.pos.x), zs = TILES.map(t => t.pos.z), m = 2;
+  Object.assign(PAN, { minX: Math.min(...xs) - m, maxX: Math.max(...xs) + m, minZ: Math.min(...zs) - m, maxZ: Math.max(...zs) + m });
+}
+function clampPan() {
+  const t = controls.target, x = clamp(t.x, PAN.minX, PAN.maxX), z = clamp(t.z, PAN.minZ, PAN.maxZ);
+  if (x === t.x && z === t.z) return false;
+  camera.position.x += x - t.x; camera.position.z += z - t.z; t.x = x; t.z = z;
+  return true;
+}
 function initEnvironment() {
+  setPanBounds();
   sky = new THREE.Mesh(new THREE.SphereGeometry(170, 40, 20), new THREE.ShaderMaterial({
     uniforms: { uTop: { value: new THREE.Color() }, uHorizon: { value: new THREE.Color() }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSun: { value: new THREE.Color() }, uNight: { value: 0 } },
     vertexShader: SKY_VS, fragmentShader: SKY_FS, side: THREE.BackSide, depthWrite: false, fog: false, toneMapped: false
@@ -2610,7 +2625,7 @@ function itemCard(it) {
   <p class="sum">${esc(tr(it.desc, it.descEn))}</p>
   <h3 class="eyebrow">${tr('受惠對象', 'Who it helps')}</h3>
   <div class="chips">${audChips(it.audience)}</div>
-  <div class="tiles">${nums.map(t => `<div class="tile"><div class="bignum">${esc(t.n)}<small>${esc(t.u)}</small></div><div class="tl">${esc(t.label)}</div></div>`).join('')}</div>
+  <div class="tiles">${nums.map(t => `<div class="tile"><div class="bignum" style="font-size:${t.n.length > 6 ? 17 : t.n.length > 4 ? 19 : 22}px">${esc(t.n)}${t.u ? `<small>${esc(t.u)}</small>` : ''}</div><div class="tl">${esc(t.label)}</div></div>`).join('')}</div>
   <h3 class="eyebrow">${tr('重點事實（虛構示範數字）', 'Key facts (fictional figures)')}</h3>
   <ul class="facts">${factsOf(it).map(f => `<li>${esc(f)}</li>`).join('')}</ul>
   <h3 class="eyebrow">${tr('時程軸', 'Timeline')}</h3>
@@ -2753,7 +2768,7 @@ function buildUI() {
   makeSheet($('#sidebar')); makeSheet($('#card'));
   let down = null;
   renderer.domElement.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; S.flight = null; });
-  renderer.domElement.addEventListener('pointerup', e => { if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 6) pickAt(e); down = null; });
+  renderer.domElement.addEventListener('pointerup', e => { if (down && e.button === 0 && !e.shiftKey && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 6) pickAt(e); down = null; });
   window.addEventListener('keydown', e => {
     if (e.target.matches && e.target.matches('input, textarea, select')) { if (e.key === 'Escape') e.target.blur(); return; }
     const st = .08;
@@ -2814,6 +2829,7 @@ function frame(now) {
     if (k >= 1) S.flight = null; S.dirty = true;
   }
   if (controls.update()) S.dirty = true;
+  if (!S.flight && clampPan()) S.dirty = true;
   if (!running && !S.dirty) return;
   if (running) {
     applyTime(); updateClouds(dt);
